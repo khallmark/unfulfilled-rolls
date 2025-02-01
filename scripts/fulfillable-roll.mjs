@@ -74,36 +74,73 @@ function _identifyFulfillableTerms(terms, config) {
   const fulfillableTerms = [];
 
   /**
-   * checks the given term to see if it is a Die term that can be fulfilled externally
+   * Checks the given term to see if it is a Die term that can be fulfilled externally.
    *
    * @param {RollTerm} term
    */
   function identifyTerm(term) {
-    if ( !(term instanceof Die) ) return; // only Die terms
-    if ( term._fulfilled?.length > 0 ) return; // already fulfilled
+    if (!(term instanceof Die)) return; // only Die terms
+    if (term._fulfilled?.length > 0) return; // already fulfilled
 
-    const method = config[`d${term.faces}`];
-    if ( method && (method !== "fvtt") ) {
-      fulfillableTerms.push({term, method, index: fulfillableTerms.length});
+    let cleanFaces = term.faces;
+    if (typeof cleanFaces === "string") {
+      // Extract the numeric base from the beginning of the string.
+      const baseMatch = cleanFaces.match(/^\d+/);
+      let base = baseMatch ? parseInt(baseMatch[0], 10) : NaN;
+      if (isNaN(base)) return;
+
+      // Process each bracketed expression in sequence.
+      const brackets = cleanFaces.match(/\[([^\]]+)\]/g) || [];
+      for (const bracket of brackets) {
+        // Remove the surrounding brackets.
+        const content = bracket.slice(1, -1).trim();
+        // Check if content is a valid math function call, e.g., "Sqrt()"
+        const fnMatch = content.match(/^([A-Za-z]+)\(([^)]*)\)$/);
+        if (fnMatch) {
+          const fnName = fnMatch[1];
+          // Attempt to retrieve the function in a case-insensitive way.
+          let mathFunc = null;
+          if (typeof Math[fnName] === "function") {
+            mathFunc = Math[fnName];
+          } else if (typeof Math[fnName.toLowerCase()] === "function") {
+            mathFunc = Math[fnName.toLowerCase()];
+          }
+          // If a valid math function exists, apply it to the current base value.
+          if (mathFunc) {
+            base = mathFunc(base);
+          }
+        }
+        // Non-math bracket expressions are simply ignored.
+      }
+      cleanFaces = base;
+    } else {
+      // If term.faces is already a number, use it directly.
+      cleanFaces = Number(cleanFaces);
+    }
+
+    const method = config[`d${cleanFaces}`];
+    if (method && (method !== "fvtt")) {
+      fulfillableTerms.push({ term, method, index: fulfillableTerms.length });
     }
   }
 
   /**
-   * looks for dice term in list and adds them to toFulfill, recursively
+   * Recursively extract dice from a list of RollTerms.
+   *
    * @param {RollTerm[]} list
    */
   function extractDiceFrom(list) {
-    for ( const term of list ) {
-      identifyTerm(term)
+    for (const term of list) {
+      identifyTerm(term);
 
       // Recursively identify inner terms
-      if ( "dice" in term ) {
+      if ("dice" in term) {
         extractDiceFrom(term.dice);
       }
     }
   }
 
-  extractDiceFrom(terms)
+  extractDiceFrom(terms);
   return fulfillableTerms;
 }
 
